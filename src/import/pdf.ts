@@ -6,7 +6,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 /** PDF'teki metni, aynı yükseklikteki parçaları birleştirerek satırlara çevirir. */
 async function pdfLines(file: File): Promise<string[]> {
-  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  // Sadece metin okuyoruz: PDF içinden kod üretilmesini (eval) kapat.
+  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false }).promise;
   const lines: string[] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const content = await (await pdf.getPage(p)).getTextContent();

@@ -112,6 +112,7 @@ export function insights(all: Transaction[], ym: string): Insight[] {
     const avg = new Map<string, number>();
     for (const m of prev) for (const c of monthSummary(all, m).categories) avg.set(c.name, (avg.get(c.name) ?? 0) + c.amount / prev.length);
     const rises = now.categories
+      .filter((c) => c.name !== 'Banka Masrafı') // zaten kendi kartı var
       .map((c) => ({ ...c, before: avg.get(c.name) ?? 0 }))
       .filter((c) => c.before > 0 && c.amount > c.before * 1.3 && c.amount - c.before > Math.max(500, now.total * 0.03))
       .sort((a, b) => b.amount - b.before - (a.amount - a.before))

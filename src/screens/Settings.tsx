@@ -27,8 +27,21 @@ async function exportBackup() {
 
 async function importBackup(file: File | undefined) {
   if (!file) return;
-  const data = JSON.parse(await file.text());
-  if (!Array.isArray(data.transactions)) return alert('Bu bir Cüzdan yedeği değil.');
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    return alert('Bu dosya okunamadı.');
+  }
+  // Sadece beklenen biçimdeki kayıtları kabul et
+  const valid =
+    Array.isArray(data?.transactions) &&
+    data.transactions.every(
+      (t: Record<string, unknown>) =>
+        typeof t.key === 'string' && typeof t.description === 'string' && typeof t.category === 'string' &&
+        typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && typeof t.amount === 'number' && Number.isFinite(t.amount),
+    );
+  if (!valid) return alert('Bu bir Cüzdan yedeği değil.');
   if (!confirm('Mevcut verilerin silinip yedektekiyle değiştirilsin mi?')) return;
   await db.transaction('rw', [db.transactions, db.rules, db.imports, db.settings], async () => {
     await Promise.all([db.transactions.clear(), db.rules.clear(), db.imports.clear()]);
@@ -47,7 +60,8 @@ async function wipe() {
 
 /** Avrupa Merkez Bankası'nın günlük kurunu çeker. Sadece kur sorulur; hiçbir kişisel veri gönderilmez. */
 async function fetchRate(currency: string) {
-  const res = await fetch(`https://api.frankfurter.app/latest?from=${currency}&to=TRY`);
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('geçersiz para birimi');
+  const res = await fetch(`https://api.frankfurter.dev/v1/latest?from=${currency}&to=TRY`);
   if (!res.ok) throw new Error(String(res.status));
   return (await res.json()).rates.TRY as number;
 }
