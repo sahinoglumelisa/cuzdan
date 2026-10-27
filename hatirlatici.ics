@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Cuzdan//TR
+BEGIN:VEVENT
+UID:cuzdan-aylik-hatirlatici@local
+DTSTAMP:20261027T000000Z
+DTSTART;TZID=Europe/Istanbul:20261105T200000
+DURATION:PT15M
+RRULE:FREQ=MONTHLY;BYMONTHDAY=5
+SUMMARY:Cüzdan: ekstrelerini yükle
+DESCRIPTION:Kredi kartı ekstrelerini ve hesap dökümlerini indir\, Cüzdan uygulamasına yükle. 5 dakika sürer.
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Cüzdan: ekstrelerini yükle
+TRIGGER:PT0M
+END:VALARM
+END:VEVENT
+END:VCALENDAR
