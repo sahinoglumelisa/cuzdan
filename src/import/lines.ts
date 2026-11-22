@@ -3,7 +3,10 @@ import type { ParsedRow } from '../types';
 import { parseAmount, parseDate } from './parse';
 
 const DATE_RE = /^(\d{1,2}[./]\d{1,2}[./]\d{2,4})\s*/;
-const AMOUNT_RE = /[-+]?\(?\d{1,3}(?:\.\d{3})*,\d{2}\)?-?(?:\s?(?:TL|B|A)\b)?/g;
+// Binlik ayraçlı ("12.500,00") ya da ayraçsız ("1234,56") tutar. Önünde rakam olmamalı: yoksa "1234,56"nın sadece
+// "234,56" kısmını yakalıyordu. Arkasından gelen yabancı para kodu 1. grupta yakalanır (bkz. parseLines).
+const AMOUNT_RE =
+  /(?<![\d.,])[-+]?\(?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?!\d)\)?-?(?:\s?(?:TL|TRY|B|A)\b)?(\s?(?:USD|EUR|GBP|CHF|\$|€|£))?/g;
 
 export interface PdfResult {
   rows: ParsedRow[];
@@ -37,11 +40,13 @@ export function parseLines(lines: string[]): PdfResult {
     if (!date) continue;
     // Bazı ekstrelerde işlem tarihinin yanında bir de valör tarihi var
     const rest = line.slice(m[0].length).replace(DATE_RE, '');
-    const first = [...rest.matchAll(AMOUNT_RE)][0];
+    const amounts = [...rest.matchAll(AMOUNT_RE)];
+    // Yurt dışı harcamada önce orijinal tutar ("12,99 USD"), sonra TL karşılığı yazılır: TL olanı al.
+    const first = amounts.find((a) => !a[1]);
     if (!first) continue;
     const amount = parseAmount(first[0].replace('+', ''));
     if (amount === null || amount === 0) continue;
-    const description = rest.slice(0, first.index).replace(/\s+/g, ' ').trim() || '(açıklama yok)';
+    const description = rest.slice(0, amounts[0].index).replace(/\s+/g, ' ').trim() || '(açıklama yok)';
     // Kart ekstrelerinde başında "+" olan tutar alacaktır (iade, ödeme, önceki dönemden artan).
     rows.push({ date, description, amount, currency: 'TRY', credit: first[0].trim().startsWith('+') || undefined });
   }

@@ -11,6 +11,15 @@ const DEBIT_COLS = ['borc', 'cikan', 'gider'];
 const CREDIT_COLS = ['alacak', 'giren', 'gelir'];
 const TYPE_COLS = ['islem tipi', 'operation type'];
 
+/** CSV'yi UTF-8 olarak, olmazsa Türkçe Windows kodlamasıyla (bankaların eski dışa aktarımları) çözer. */
+function decodeText(buf: Uint8Array) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^﻿/, '');
+  } catch {
+    return new TextDecoder('windows-1254').decode(buf);
+  }
+}
+
 /** Başlık satırındaki sütunu bulur: önce tam eşleşme, sonra "içerir". */
 function findCol(header: string[], names: string[], taken: number[] = []) {
   for (const n of names) {
@@ -29,7 +38,14 @@ function findCol(header: string[], names: string[], taken: number[] = []) {
  * Başlık satırını kendisi bulur (bankalar üste logo, hesap no vb. koyuyor).
  */
 export async function parseSpreadsheet(file: File): Promise<ParsedRow[]> {
-  const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+  const buf = new Uint8Array(await file.arrayBuffer());
+  // .xlsx (zip, "PK") ve eski .xls (OLE) ikili; geri kalanı CSV/metin.
+  const binary = (buf[0] === 0x50 && buf[1] === 0x4b) || (buf[0] === 0xd0 && buf[1] === 0xcf);
+  const wb = binary
+    ? XLSX.read(buf, { type: 'array', cellDates: true })
+    : // CSV'de kütüphanenin sayı tahminini kapat: "234,56"yı 23456, "12.500,00"ı 12,5 okuyordu.
+      // Tutar ve tarihleri kendi Türkçe ayrıştırıcımız okusun.
+      XLSX.read(decodeText(buf), { type: 'string', raw: true });
   const rows: ParsedRow[] = [];
 
   for (const name of wb.SheetNames) {
