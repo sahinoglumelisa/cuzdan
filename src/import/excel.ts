@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { normalize } from '../categories';
 import type { ParsedRow } from '../types';
-import { parseAmount, parseDate } from './parse';
+import { currencyOf, parseAmount, parseDate } from './parse';
 
 const DATE_COLS = ['islem tarihi', 'tarih', 'date'];
 // Not: tek başına 'islem' yazılmamalı; "içerir" aramasında "İşlem Tarihi" sütununu yakalayıp açıklama yerine tarihi okuyordu.
@@ -10,6 +10,7 @@ const AMOUNT_COLS = ['islem tutari', 'tutar', 'tutar (tl)', 'amount'];
 const DEBIT_COLS = ['borc', 'cikan', 'gider'];
 const CREDIT_COLS = ['alacak', 'giren', 'gelir'];
 const TYPE_COLS = ['islem tipi', 'operation type'];
+const CURRENCY_COLS = ['para birimi', 'doviz cinsi', 'doviz kodu', 'currency', 'doviz'];
 
 /** CSV'yi UTF-8 olarak, olmazsa Türkçe Windows kodlamasıyla (bankaların eski dışa aktarımları) çözer. */
 function decodeText(buf: Uint8Array) {
@@ -66,9 +67,13 @@ export async function parseSpreadsheet(file: File, chosen?: string): Promise<Par
     const iType = findCol(header, TYPE_COLS);
     // Açıklama sütunu tarih/tutar/tip sütunlarından biri olamaz.
     const iDesc = findCol(header, DESC_COLS, [iDate, iAmount, iDebit, iCredit, iType]);
-    // Başlığın üstündeki bilgi satırlarında (ör. "Ürün-Döviz Tipi") geçen para birimi; yoksa TL
+    const iCur = findCol(header, CURRENCY_COLS, [iDate, iAmount, iDebit, iCredit, iType, iDesc]);
+    // Varsayılan para birimi: tutar sütununun başlığı ("Tutar (EUR)"), kullanıcının seçimi,
+    // başlığın üstündeki bilgi satırları (ör. "Ürün-Döviz Tipi"), en son TL.
     const top = grid.slice(0, headerIdx).flat().join(' ');
-    const currency = chosen ?? (/\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY');
+    const amountHeader = String(grid[headerIdx][iAmount >= 0 ? iAmount : iDebit] ?? '');
+    const sheetCurrency =
+      currencyOf(amountHeader) ?? chosen ?? (/\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY');
 
     for (const r of grid.slice(headerIdx + 1)) {
       const date = parseDate(r[iDate]);
@@ -84,6 +89,9 @@ export async function parseSpreadsheet(file: File, chosen?: string): Promise<Par
       if (amount === null || amount === 0) continue;
       const description = String(iDesc >= 0 ? r[iDesc] : '').replace(/\s+/g, ' ').trim() || '(açıklama yok)';
       const hint = iType >= 0 ? String(r[iType]).trim() || undefined : undefined;
+      // Karışık TL/EUR dökümler: satırın kendi para birimi sütunu ya da tutar hücresindeki işaret önce gelir.
+      const cell = iAmount >= 0 ? r[iAmount] : amount < 0 ? r[iDebit] : r[iCredit];
+      const currency = (iCur >= 0 ? currencyOf(r[iCur]) : undefined) ?? currencyOf(cell) ?? sheetCurrency;
       rows.push({ date, description, amount, currency, hint });
     }
   }

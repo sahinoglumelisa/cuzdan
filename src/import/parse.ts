@@ -2,7 +2,7 @@
 export function parseAmount(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v !== 'string') return null;
-  let s = v.replace(/\s|TL|TRY|₺/gi, '');
+  let s = v.replace(/\s|TL|TRY|EUR|USD|GBP|CHF|[₺€$£]/gi, '');
   // Bazı bankalar "1.234,56-" ya da "(1.234,56)" ya da "1.234,56 B" (borç) yazar
   let negative = /^-|-$|^\(.*\)$/.test(s);
   if (/[Bb]$/.test(s)) { negative = true; s = s.slice(0, -1); }
@@ -23,6 +23,15 @@ export function parseAmount(v: unknown): number | null {
   const n = Number(s);
   if (!Number.isFinite(n)) return null;
   return negative ? -n : n;
+}
+
+/** Hücrede yazan para birimi ("2,29 EUR", "€", "TL", "Euro") -> "EUR" / "TRY"…; yoksa undefined. */
+export function currencyOf(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const m = v.match(/(?<![A-Za-z])(TL|TRY|EUR|EURO|USD|GBP|CHF)(?![A-Za-z])|[₺€$£]/i);
+  if (!m) return undefined;
+  const c = m[0].toUpperCase();
+  return ({ TL: 'TRY', '₺': 'TRY', EURO: 'EUR', '€': 'EUR', $: 'USD', '£': 'GBP' } as Record<string, string>)[c] ?? c;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');

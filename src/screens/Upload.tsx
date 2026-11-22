@@ -126,7 +126,8 @@ export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
           ))}
       </datalist>
 
-      <label className="label">Ekstredeki tutarlar hangi para biriminde?</label>
+      <label className="label">Yanında ₺ / € yazmayan tutarlar hangi para biriminde?</label>
+      <p className="muted small">İşaretli tutarlara (2,29 EUR, 98,50 TL…) her satırda ayrı bakılır; çoğu ekstre için Otomatik yeterli.</p>
       <div className="segmented">
         {[
           ['', 'Otomatik'],
