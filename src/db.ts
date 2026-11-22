@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
-import { categorize } from './categories';
+import { categorize, merchantKey } from './categories';
+import { predict, train, type Model } from './learn';
 import type { ImportRecord, Rule, Settings, Transaction } from './types';
 
 class CuzdanDB extends Dexie {
@@ -43,18 +44,39 @@ export function convert(amount: number, from: string, s: Settings): number | nul
 // iOS'un depolamayı kendiliğinden silmemesi için kalıcı depolama iste.
 navigator.storage?.persist?.().catch(() => {});
 
+/** Modelin öğreneceği örnekler: tahmin edilmiş olanlar hariç (yanlış tahmin kendini pekiştirmesin). */
+export async function learnModel(): Promise<Model> {
+  return train(await db.transactions.filter((t) => !t.guessed).toArray());
+}
+
+/** Kelime listesi yoksa öğrenilen modelden tahmin dener. */
+export function classify(t: Pick<Transaction, 'description' | 'amount' | 'kind'>, rules: Rule[], model: Model, text = t.description) {
+  let category = categorize(text, t.amount, rules);
+  let guessed = false;
+  if (category === 'Diğer' && !rules.some((r) => r.match === merchantKey(t.description))) {
+    const p = predict(model, t.description, t.amount);
+    if (p) [category, guessed] = [p, true];
+  }
+  // Kartta artı tutar = karta yapılan ödeme ya da iade; gelir değil.
+  if (t.kind === 'kart' && category === 'Gelir') category = 'Kart Ödemesi';
+  return { category, guessed };
+}
+
 /**
- * "Diğer"de kalmış işlemleri güncel kurallarla yeniden dener (kategori listesi geliştikçe eskiler de düzelsin).
- * Kullanıcı bir işyerini bilerek "Diğer" yaptıysa kuralı önce bakıldığı için yine "Diğer" kalır.
+ * "Diğer"de kalmış ve tahmin edilmiş işlemleri güncel kurallar ve modelle yeniden dener.
+ * Kullanıcı bir işyerini bilerek "Diğer" yaptıysa kuralı olduğu için yine "Diğer" kalır.
  */
 export async function recategorizeOthers() {
   await db.transaction('rw', db.transactions, db.rules, async () => {
-    const rules = await db.rules.toArray();
-    await db.transactions.where('category').equals('Diğer').modify((t) => {
-      let c = categorize(t.description, t.amount, rules);
-      if (t.kind === 'kart' && c === 'Gelir') c = 'Kart Ödemesi';
-      t.category = c;
-    });
+    const [rules, model] = await Promise.all([db.rules.toArray(), learnModel()]);
+    await db.transactions
+      .filter((t) => t.category === 'Diğer' || !!t.guessed)
+      .modify((t) => {
+        const r = classify(t, rules, model);
+        t.category = r.category;
+        if (r.guessed) t.guessed = true;
+        else delete t.guessed;
+      });
   });
 }
 

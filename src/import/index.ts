@@ -1,5 +1,4 @@
-import { categorize } from '../categories';
-import { db } from '../db';
+import { classify, db, learnModel } from '../db';
 import type { AccountKind, ParsedRow, Transaction } from '../types';
 import { parseSpreadsheet } from './excel';
 import { parsePdf } from './pdf';
@@ -26,12 +25,12 @@ export async function readFile(file: File, account: string, kind: AccountKind): 
     if (positives > rows.length / 2) rows = rows.map((r) => ({ ...r, amount: r.credit ? Math.abs(r.amount) : -r.amount }));
   }
 
-  const rules = await db.rules.toArray();
+  const [rules, model] = await Promise.all([db.rules.toArray(), learnModel()]);
   const all = rows.map(({ date, description, amount, hint, currency = 'TRY' }) => {
-    let category = categorize(hint ? `${description} ${hint}` : description, amount, rules);
-    // Kartta artı tutar = karta yapılan ödeme ya da iade; gelir değil.
-    if (kind === 'kart' && category === 'Gelir') category = 'Kart Ödemesi';
-    return { date, description, amount, currency, account, kind, category, key: `${account}|${date}|${amount.toFixed(2)}|${description}` };
+    const { category, guessed } = classify({ description, amount, kind }, rules, model, hint ? `${description} ${hint}` : description);
+    const t: Omit<Transaction, 'importId'> = { date, description, amount, currency, account, kind, category, key: `${account}|${date}|${amount.toFixed(2)}|${description}` };
+    if (guessed) t.guessed = true;
+    return t;
   });
 
   // Aynı dosyada gerçekten iki kez aynı işlem olabilir (ör. iki kahve): sıra no ile ayır.

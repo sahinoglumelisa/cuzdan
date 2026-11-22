@@ -13,6 +13,8 @@ export interface Transaction {
   account: string;
   kind: AccountKind;
   category: string;
+  /** Kategori kelime listesinden değil, öğrenilen modelden tahmin edildi (ekranda "?" ile gösterilir) */
+  guessed?: boolean;
   importId: number;
 }
 

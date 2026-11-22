@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CATEGORIES, merchantKey, normalize } from '../categories';
-import { db } from '../db';
+import { db, recategorizeOthers } from '../db';
 import { dayLabel, money } from '../format';
 import type { Transaction, ViewTransaction } from '../types';
 import MonthPicker from './MonthPicker';
@@ -18,14 +18,19 @@ async function recategorize(t: Transaction, category: string) {
   const match = merchantKey(t.description);
   await db.transaction('rw', db.transactions, db.rules, async () => {
     if (!match) {
-      await db.transactions.update(t.id!, { category });
+      await db.transactions.update(t.id!, { category, guessed: undefined });
       return;
     }
     const existing = await db.rules.where('match').equals(match).first();
     if (existing) await db.rules.update(existing.id!, { category });
     else await db.rules.add({ match, category });
-    await db.transactions.filter((x) => merchantKey(x.description) === match).modify({ category });
+    await db.transactions.filter((x) => merchantKey(x.description) === match).modify((x) => {
+      x.category = category;
+      delete x.guessed;
+    });
   });
+  // Yeni örnekle model güncellendi: "Diğer"deki benzer işlemleri yeniden dene.
+  await recategorizeOthers();
 }
 
 export default function Transactions({ all, ym, setYm, category, setCategory }: Props) {
@@ -65,9 +70,17 @@ export default function Transactions({ all, ym, setYm, category, setCategory }: 
                 {t.original !== undefined ? money(t.original, t.currency) : money(t.amount)}
               </div>
               {t.original !== undefined && <div className="muted small num">≈ {money(t.amount)}</div>}
-              <select className="chip" value={t.category} onChange={(e) => recategorize(t, e.target.value)}>
+              <select
+                className="chip"
+                value={t.category}
+                title={t.guessed ? 'Benzer işlemlerden tahmin edildi; yanlışsa düzelt' : undefined}
+                onChange={(e) => recategorize(t, e.target.value)}
+              >
                 {CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                    {t.guessed && c === t.category ? ' ?' : ''}
+                  </option>
                 ))}
               </select>
             </div>
