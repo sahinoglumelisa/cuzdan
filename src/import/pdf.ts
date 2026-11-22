@@ -1,5 +1,6 @@
-import * as pdfjs from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// Legacy derleme: eski iOS/Android tarayıcılarında olmayan özellikleri (ör. Promise.withResolvers) kendisi ekliyor.
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { parseStatement, type PdfResult } from './lines';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;

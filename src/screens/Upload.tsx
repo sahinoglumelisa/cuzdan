@@ -28,7 +28,9 @@ export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
       }
     } catch (e) {
       console.error(e);
-      setError('Dosya okunamadı. Şifreli PDF ise şifresiz halini indirmeyi dene.');
+      // Telefonda konsol görünmediği için asıl hatayı da göster.
+      const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      setError(`Dosya okunamadı. Şifreli PDF ise şifresiz halini indirmeyi dene. (${detail})`);
     } finally {
       setBusy(false);
     }
