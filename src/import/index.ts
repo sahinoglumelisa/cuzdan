@@ -10,14 +10,17 @@ export interface Preview {
   fresh: Omit<Transaction, 'importId'>[];
   duplicates: number;
   notes: string[];
+  /** Kullanıcının seçtiği para birimi (bir sonraki yüklemede aynı hesap için hatırlanır) */
+  currency?: string;
 }
 
-export async function readFile(file: File, account: string, kind: AccountKind): Promise<Preview> {
+/** currency: kullanıcı seçtiyse, yanında para kodu yazmayan tutarların para birimi; yoksa dosyadan tahmin edilir. */
+export async function readFile(file: File, account: string, kind: AccountKind, currency?: string): Promise<Preview> {
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   let rows: ParsedRow[];
   let notes: string[] = [];
-  if (isPdf) ({ rows, notes } = await parsePdf(file));
-  else rows = await parseSpreadsheet(file);
+  if (isPdf) ({ rows, notes } = await parsePdf(file, currency));
+  else rows = await parseSpreadsheet(file, currency);
 
   // Kart ekstrelerinde harcamalar genelde artı yazılır; bizde gider eksi olmalı.
   if (kind === 'kart') {
@@ -43,7 +46,7 @@ export async function readFile(file: File, account: string, kind: AccountKind): 
 
   const existing = new Set((await db.transactions.where('key').anyOf(all.map((t) => t.key)).toArray()).map((t) => t.key));
   const fresh = all.filter((t) => !existing.has(t.key));
-  return { fileName: file.name, account, kind, fresh, duplicates: all.length - fresh.length, notes };
+  return { fileName: file.name, account, kind, fresh, duplicates: all.length - fresh.length, notes, currency };
 }
 
 export async function savePreview(p: Preview) {
@@ -54,6 +57,7 @@ export async function savePreview(p: Preview) {
       account: p.account,
       kind: p.kind,
       count: p.fresh.length,
+      ...(p.currency && { currency: p.currency }),
     });
     await db.transactions.bulkAdd(p.fresh.map((t) => ({ ...t, importId })));
   });

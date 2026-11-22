@@ -8,6 +8,8 @@ const DATE_RE = /^(\d{1,2}[./]\d{1,2}[./]\d{2,4})\s*/;
 const AMOUNT_RE =
   /(?<![\d.,])[-+]?\(?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?!\d)\)?-?(?:\s?(?:TL|TRY|B|A)\b)?(\s?(?:USD|EUR|GBP|CHF|\$|€|£))?/g;
 
+const CODES: Record<string, string> = { $: 'USD', '€': 'EUR', '£': 'GBP' };
+
 export interface PdfResult {
   rows: ParsedRow[];
   /** Ekstrede dikkat edilmesi gereken durumlar (ör. limit aşımı) */
@@ -15,10 +17,11 @@ export interface PdfResult {
 }
 
 /** Metne bakıp hangi bankanın düzeni olduğunu seçer. */
-export function parseStatement(lines: string[]): PdfResult {
+/** currency: kullanıcının seçtiği para birimi; yanında para kodu yazmayan tutarlar için geçerli. */
+export function parseStatement(lines: string[], currency?: string): PdfResult {
   const text = lines.join('\n');
   if (/Aion Bank/i.test(text) || (/Booking date/.test(text) && /Operation title/.test(text))) return parseAion(lines);
-  return parseLines(lines);
+  return parseLines(lines, currency);
 }
 
 /**
@@ -26,9 +29,13 @@ export function parseStatement(lines: string[]): PdfResult {
  * Satırdaki ilk tutar işlem tutarı sayılır (sonrakiler genelde taksit/puan/mil).
  * Test edilen: İş Bankası Maximiles.
  */
-export function parseLines(lines: string[]): PdfResult {
+export function parseLines(lines: string[], currency?: string): PdfResult {
   const rows: ParsedRow[] = [];
   const notes = new Set<string>();
+  // Belgenin para birimi: TL hiç geçmiyor ama EUR/€ geçiyorsa (ör. Alman bankası) tutarlar EUR'dur.
+  const text = lines.join('\n');
+  const docCurrency = currency ?? (/\bTL\b|\bTRY\b|₺/.test(text) ? 'TRY' : /€|\bEUR\b/.test(text) ? 'EUR' : 'TRY');
+  const codeOf = (a: RegExpMatchArray) => (a[1] ? (CODES[a[1].trim()] ?? a[1].trim()) : undefined);
   for (const line of lines) {
     const flat = normalize(line).replace(/\s/g, '');
     if (flat.includes('limitasimi')) notes.add('Bu dönemde kart limitini aşmışsın. Limit aşımı ek ücret ve faiz demek.');
@@ -41,14 +48,18 @@ export function parseLines(lines: string[]): PdfResult {
     // Bazı ekstrelerde işlem tarihinin yanında bir de valör tarihi var
     const rest = line.slice(m[0].length).replace(DATE_RE, '');
     const amounts = [...rest.matchAll(AMOUNT_RE)];
-    // Yurt dışı harcamada önce orijinal tutar ("12,99 USD"), sonra TL karşılığı yazılır: TL olanı al.
-    const first = amounts.find((a) => !a[1]);
+    // Yurt dışı harcamada önce orijinal tutar ("12,99 USD"), sonra TL karşılığı yazılır: para kodu olmayanı al.
+    // Satırda sadece kodlu tutar varsa ("2,29 EUR") o tutarı kendi para birimiyle al; asla TL sayma.
+    // Kullanıcı para birimi seçtiyse ve satırda o para biriminde yazılmış tutar varsa önce onu al.
+    const first =
+      (currency && amounts.find((a) => codeOf(a) === currency)) || amounts.find((a) => !a[1]) || amounts[0];
     if (!first) continue;
-    const amount = parseAmount(first[0].replace('+', ''));
+    const cur = codeOf(first) ?? docCurrency;
+    const amount = parseAmount(first[0].slice(0, first[0].length - (first[1]?.length ?? 0)).replace('+', ''));
     if (amount === null || amount === 0) continue;
     const description = rest.slice(0, amounts[0].index).replace(/\s+/g, ' ').trim() || '(açıklama yok)';
     // Kart ekstrelerinde başında "+" olan tutar alacaktır (iade, ödeme, önceki dönemden artan).
-    rows.push({ date, description, amount, currency: 'TRY', credit: first[0].trim().startsWith('+') || undefined });
+    rows.push({ date, description, amount, currency: cur, credit: first[0].trim().startsWith('+') || undefined });
   }
   return { rows, notes: [...notes] };
 }

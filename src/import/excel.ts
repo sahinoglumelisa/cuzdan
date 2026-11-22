@@ -37,7 +37,8 @@ function findCol(header: string[], names: string[], taken: number[] = []) {
  * Bankalardan indirilen Excel/CSV hesap hareketlerini okur.
  * Başlık satırını kendisi bulur (bankalar üste logo, hesap no vb. koyuyor).
  */
-export async function parseSpreadsheet(file: File): Promise<ParsedRow[]> {
+/** chosen: kullanıcının seçtiği para birimi; verilmezse dosyanın üst bilgisinden tahmin edilir. */
+export async function parseSpreadsheet(file: File, chosen?: string): Promise<ParsedRow[]> {
   const buf = new Uint8Array(await file.arrayBuffer());
   // .xlsx (zip, "PK") ve eski .xls (OLE) ikili; geri kalanı CSV/metin.
   const binary = (buf[0] === 0x50 && buf[1] === 0x4b) || (buf[0] === 0xd0 && buf[1] === 0xcf);
@@ -67,7 +68,7 @@ export async function parseSpreadsheet(file: File): Promise<ParsedRow[]> {
     const iDesc = findCol(header, DESC_COLS, [iDate, iAmount, iDebit, iCredit, iType]);
     // Başlığın üstündeki bilgi satırlarında (ör. "Ürün-Döviz Tipi") geçen para birimi; yoksa TL
     const top = grid.slice(0, headerIdx).flat().join(' ');
-    const currency = /\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY';
+    const currency = chosen ?? (/\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY');
 
     for (const r of grid.slice(headerIdx + 1)) {
       const date = parseDate(r[iDate]);

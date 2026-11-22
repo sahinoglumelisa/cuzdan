@@ -6,9 +6,18 @@ import type { Preview } from '../import';
 import type { AccountKind } from '../types';
 
 export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
-  const accounts = useLiveQuery(async () => [...new Set((await db.imports.toArray()).map((i) => `${i.kind}|${i.account}`))], []) ?? [];
+  const imports = useLiveQuery(() => db.imports.orderBy('at').toArray(), []) ?? [];
+  const accounts = [...new Set(imports.map((i) => `${i.kind}|${i.account}`))];
   const [kind, setKind] = useState<AccountKind>('kart');
   const [account, setAccount] = useState('');
+  // '' = dosyadan tahmin et. Aynı hesap için en son seçilen para birimi hatırlanır.
+  const [currency, setCurrency] = useState('');
+
+  function chooseAccount(name: string) {
+    setAccount(name);
+    const last = imports.filter((i) => i.account === name.trim() && i.kind === kind).at(-1);
+    if (last) setCurrency(last.currency ?? '');
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -20,7 +29,7 @@ export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
     try {
       // PDF/Excel okuyucuları büyük; sadece gerektiğinde yüklensin.
       const { readFile } = await import('../import');
-      const p = await readFile(file, account.trim() || (kind === 'kart' ? 'Kredi kartı' : 'Banka hesabı'), kind);
+      const p = await readFile(file, account.trim() || (kind === 'kart' ? 'Kredi kartı' : 'Banka hesabı'), kind, currency || undefined);
       if (p.fresh.length === 0 && p.duplicates === 0) {
         setError('Bu dosyada işlem bulamadım. Bankanın internet şubesinden "Excel olarak indir" seçeneğini dene. PDF\'lerin düzeni bankaya göre değişiyor.');
       } else {
@@ -79,7 +88,7 @@ export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
           ))}
         </ul>
         {preview.fresh.length > 8 && <p className="muted small">…ve {preview.fresh.length - 8} işlem daha</p>}
-        <p className="muted small">Tutarlar ve tarihler doğru görünüyor mu? Görünmüyorsa iptal et; bu banka için okuyucuyu düzeltmemiz gerekir.</p>
+        <p className="muted small">Tutarlar, para birimi (₺ / €) ve tarihler doğru görünüyor mu? Para birimi yanlışsa iptal edip yukarıdan doğrusunu seç. Başka bir şey yanlışsa bu banka için okuyucuyu düzeltmemiz gerekir.</p>
         <div className="row">
           <button onClick={() => setPreview(null)}>İptal</button>
           <button className="primary" onClick={save} disabled={preview.fresh.length === 0}>
@@ -108,7 +117,7 @@ export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
       <label className="label" htmlFor="account">
         Hangi kart / hesap?
       </label>
-      <input id="account" list="accounts" placeholder={kind === 'kart' ? 'ör. Garanti Bonus' : 'ör. İş Bankası vadesiz'} value={account} onChange={(e) => setAccount(e.target.value)} />
+      <input id="account" list="accounts" placeholder={kind === 'kart' ? 'ör. Garanti Bonus' : 'ör. İş Bankası vadesiz'} value={account} onChange={(e) => chooseAccount(e.target.value)} />
       <datalist id="accounts">
         {accounts
           .filter((a) => a.startsWith(kind))
@@ -116,6 +125,19 @@ export default function Upload({ onDone }: { onDone: (ym: string) => void }) {
             <option key={a} value={a.split('|')[1]} />
           ))}
       </datalist>
+
+      <label className="label">Ekstredeki tutarlar hangi para biriminde?</label>
+      <div className="segmented">
+        {[
+          ['', 'Otomatik'],
+          ['TRY', 'TL'],
+          ['EUR', 'Euro'],
+        ].map(([c, label]) => (
+          <button key={c} className={currency === c ? 'active' : ''} onClick={() => setCurrency(c)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
       <label className={`file-drop ${busy ? 'busy' : ''}`}>
         {busy ? 'Okunuyor…' : 'Dosya seç (PDF, Excel, CSV)'}
