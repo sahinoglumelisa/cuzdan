@@ -38,8 +38,6 @@ export interface ImportRecord {
   account: string;
   kind: AccountKind;
   count: number;
-  /** Yüklerken seçilen para birimi; aynı hesabın sonraki yüklemelerinde hazır gelir */
-  currency?: string;
 }
 
 /** İçe aktarıcıların döndürdüğü ham satır */

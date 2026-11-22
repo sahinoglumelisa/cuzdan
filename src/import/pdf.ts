@@ -32,6 +32,6 @@ async function pdfLines(file: File): Promise<string[]> {
   return lines;
 }
 
-export async function parsePdf(file: File, currency?: string): Promise<PdfResult> {
-  return parseStatement(await pdfLines(file), currency);
+export async function parsePdf(file: File): Promise<PdfResult> {
+  return parseStatement(await pdfLines(file));
 }

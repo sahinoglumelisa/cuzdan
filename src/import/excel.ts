@@ -38,8 +38,7 @@ function findCol(header: string[], names: string[], taken: number[] = []) {
  * Bankalardan indirilen Excel/CSV hesap hareketlerini okur.
  * Başlık satırını kendisi bulur (bankalar üste logo, hesap no vb. koyuyor).
  */
-/** chosen: kullanıcının seçtiği para birimi; verilmezse dosyanın üst bilgisinden tahmin edilir. */
-export async function parseSpreadsheet(file: File, chosen?: string): Promise<ParsedRow[]> {
+export async function parseSpreadsheet(file: File): Promise<ParsedRow[]> {
   const buf = new Uint8Array(await file.arrayBuffer());
   // .xlsx (zip, "PK") ve eski .xls (OLE) ikili; geri kalanı CSV/metin.
   const binary = (buf[0] === 0x50 && buf[1] === 0x4b) || (buf[0] === 0xd0 && buf[1] === 0xcf);
@@ -68,12 +67,12 @@ export async function parseSpreadsheet(file: File, chosen?: string): Promise<Par
     // Açıklama sütunu tarih/tutar/tip sütunlarından biri olamaz.
     const iDesc = findCol(header, DESC_COLS, [iDate, iAmount, iDebit, iCredit, iType]);
     const iCur = findCol(header, CURRENCY_COLS, [iDate, iAmount, iDebit, iCredit, iType, iDesc]);
-    // Varsayılan para birimi: tutar sütununun başlığı ("Tutar (EUR)"), kullanıcının seçimi,
+    // Varsayılan para birimi: tutar sütununun başlığı ("Tutar (EUR)"),
     // başlığın üstündeki bilgi satırları (ör. "Ürün-Döviz Tipi"), en son TL.
     const top = grid.slice(0, headerIdx).flat().join(' ');
     const amountHeader = String(grid[headerIdx][iAmount >= 0 ? iAmount : iDebit] ?? '');
     const sheetCurrency =
-      currencyOf(amountHeader) ?? chosen ?? (/\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY');
+      currencyOf(amountHeader) ?? (/\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY');
 
     for (const r of grid.slice(headerIdx + 1)) {
       const date = parseDate(r[iDate]);

@@ -12,8 +12,6 @@ const AMOUNT_RE = new RegExp(
   String.raw`(?:(?<pre>\b(?:TL|TRY|EUR|USD|GBP|CHF)\b|[₺€$£])\s?)?(?<![\d.,])(?<num>[-+]?\(?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?!\d)\)?-?(?:\s?[BA]\b)?)(?:\s?(?<post>${CUR}))?`,
   'g',
 );
-const CUR_ANYWHERE = new RegExp(String.raw`(?<![A-Za-z])(?:${CUR})`, 'g');
-
 const CODES: Record<string, string> = { TL: 'TRY', '₺': 'TRY', $: 'USD', '€': 'EUR', '£': 'GBP' };
 const code = (s: string | undefined) => (s ? (CODES[s] ?? s) : undefined);
 const codeOf = (a: RegExpMatchArray) => code(a.groups!.pre ?? a.groups!.post);
@@ -25,11 +23,10 @@ export interface PdfResult {
 }
 
 /** Metne bakıp hangi bankanın düzeni olduğunu seçer. */
-/** currency: kullanıcının seçtiği para birimi; yanında para kodu yazmayan tutarlar için geçerli. */
-export function parseStatement(lines: string[], currency?: string): PdfResult {
+export function parseStatement(lines: string[]): PdfResult {
   const text = lines.join('\n');
   if (/Aion Bank/i.test(text) || (/Booking date/.test(text) && /Operation title/.test(text))) return parseAion(lines);
-  return parseLines(lines, currency);
+  return parseLines(lines);
 }
 
 /**
@@ -37,12 +34,12 @@ export function parseStatement(lines: string[], currency?: string): PdfResult {
  * Satırdaki ilk tutar işlem tutarı sayılır (sonrakiler genelde taksit/puan/mil).
  * Test edilen: İş Bankası Maximiles.
  */
-export function parseLines(lines: string[], currency?: string): PdfResult {
+export function parseLines(lines: string[]): PdfResult {
   const rows: ParsedRow[] = [];
   const notes = new Set<string>();
-  // Belgenin para birimi: TL hiç geçmiyor ama EUR/€ geçiyorsa (ör. Alman bankası) tutarlar EUR'dur.
+  // Kartın borç para birimi: TL hiç geçmiyor ama EUR/€ geçiyorsa (ör. Alman bankası) EUR, yoksa TL.
   const text = lines.join('\n');
-  const docCurrency = currency ?? (/\bTL\b|\bTRY\b|₺/.test(text) ? 'TRY' : /€|\bEUR\b/.test(text) ? 'EUR' : 'TRY');
+  const docCurrency = /\bTL\b|\bTRY\b|₺/.test(text) ? 'TRY' : /€|\bEUR\b/.test(text) ? 'EUR' : 'TRY';
   for (const line of lines) {
     const flat = normalize(line).replace(/\s/g, '');
     if (flat.includes('limitasimi')) notes.add('Bu dönemde kart limitini aşmışsın. Limit aşımı ek ücret ve faiz demek.');
@@ -56,20 +53,13 @@ export function parseLines(lines: string[], currency?: string): PdfResult {
     const rest = line.slice(m[0].length).replace(DATE_RE, '');
     const amounts = [...rest.matchAll(AMOUNT_RE)];
     if (!amounts.length) continue;
-    // Her satırın para birimine ayrı bakılır (karışık TL/EUR ekstreler). docCurrency = kartın borç para birimi
-    // (genelde TL). Yurt dışı harcamada ekstre hem orijinal tutarı hem kartan çekilen karşılığını yazar
-    // ("MAN VS MACHINE 5,49 EUR 265,51"): ödenen, karşılık olandır. Hangi tutar alınır:
-    // 1. Borç para biriminde işaretli tutar ("265,51 TL")
-    // 2. İşaretsiz tutar: borç para birimindedir (yanında döviz tutarı varsa onun karşılığıdır)
-    // 3. Satırda sadece döviz tutarı varsa ("LIDL 2,29 EUR") o, kendi para birimiyle
-    const coded = amounts.filter((a) => codeOf(a));
-    const home = amounts.find((a) => codeOf(a) === docCurrency);
-    const plain = amounts.find((a) => !codeOf(a));
-    const first = home ?? plain ?? amounts[0];
-    // Hiçbir tutarın yanında işaret yoksa: satırın başka yerinde tek bir para birimi geçiyor mu? (ör. ayrı sütunda "EUR")
-    const inLine = [...new Set([...rest.matchAll(CUR_ANYWHERE)].map((x) => code(x[0])))];
-    const cur =
-      codeOf(first) ?? (coded.length === 0 && inLine.length === 1 ? inLine[0]! : docCurrency);
+    // Yurt dışı harcamada ekstre hem orijinal tutarı hem karttan çekilen TL karşılığını yazar
+    // ("MAN VS MACHINE 5,49 EUR 265,51"): ödenen TL olandır. Döviz işaretli tutarlar atlanır; işaretsiz ya da
+    // TL işaretli tutar alınır ve borç para biriminde sayılır. Satırın başka yerinde "USD" geçmesi bunu değiştirmez
+    // ("ANTHROPIC … 1.127,40 … 20 USD" 1.127,40 TL'dir). Satırda sadece döviz tutarı varsa (TL karşılığı yoksa)
+    // işlem kaybolmasın diye o tutar kendi para birimiyle alınır.
+    const first = amounts.find((a) => !codeOf(a) || codeOf(a) === docCurrency) ?? amounts[0];
+    const cur = codeOf(first) ?? docCurrency;
     const amount = parseAmount(first.groups!.num.replace('+', ''));
     if (amount === null || amount === 0) continue;
     const description = rest.slice(0, amounts[0].index).replace(/\s+/g, ' ').trim() || '(açıklama yok)';
