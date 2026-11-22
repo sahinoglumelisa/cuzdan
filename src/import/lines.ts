@@ -56,18 +56,20 @@ export function parseLines(lines: string[], currency?: string): PdfResult {
     const rest = line.slice(m[0].length).replace(DATE_RE, '');
     const amounts = [...rest.matchAll(AMOUNT_RE)];
     if (!amounts.length) continue;
-    // Her satırın para birimine ayrı bakılır (karışık TL/EUR ekstreler). Hangi tutar alınır:
-    // - Kullanıcı para birimi seçtiyse: o para biriminde yazılmış tutar, yoksa işaretsiz tutar.
-    // - Yabancı para işaretli tutar ("2,29 EUR 98,50"): döviz borcu o para biriminde ödenir; TL karşılığı sadece bilgi.
-    // - Sonra TL işaretli, en son satırdaki ilk tutar.
-    const first =
-      (currency && (amounts.find((a) => codeOf(a) === currency) ?? amounts.find((a) => !codeOf(a)))) ||
-      amounts.find((a) => codeOf(a) && codeOf(a) !== 'TRY') ||
-      amounts.find((a) => codeOf(a) === 'TRY') ||
-      amounts[0];
-    // Tutarın yanında işaret yoksa satırın başka yerinde tek bir para birimi geçiyor mu? (ör. ayrı sütunda "EUR")
+    // Her satırın para birimine ayrı bakılır (karışık TL/EUR ekstreler). docCurrency = kartın borç para birimi
+    // (genelde TL). Yurt dışı harcamada ekstre hem orijinal tutarı hem kartan çekilen karşılığını yazar
+    // ("MAN VS MACHINE 5,49 EUR 265,51"): ödenen, karşılık olandır. Hangi tutar alınır:
+    // 1. Borç para biriminde işaretli tutar ("265,51 TL")
+    // 2. İşaretsiz tutar: borç para birimindedir (yanında döviz tutarı varsa onun karşılığıdır)
+    // 3. Satırda sadece döviz tutarı varsa ("LIDL 2,29 EUR") o, kendi para birimiyle
+    const coded = amounts.filter((a) => codeOf(a));
+    const home = amounts.find((a) => codeOf(a) === docCurrency);
+    const plain = amounts.find((a) => !codeOf(a));
+    const first = home ?? plain ?? amounts[0];
+    // Hiçbir tutarın yanında işaret yoksa: satırın başka yerinde tek bir para birimi geçiyor mu? (ör. ayrı sütunda "EUR")
     const inLine = [...new Set([...rest.matchAll(CUR_ANYWHERE)].map((x) => code(x[0])))];
-    const cur = codeOf(first) ?? (inLine.length === 1 ? inLine[0]! : docCurrency);
+    const cur =
+      codeOf(first) ?? (coded.length === 0 && inLine.length === 1 ? inLine[0]! : docCurrency);
     const amount = parseAmount(first.groups!.num.replace('+', ''));
     if (amount === null || amount === 0) continue;
     const description = rest.slice(0, amounts[0].index).replace(/\s+/g, ' ').trim() || '(açıklama yok)';
