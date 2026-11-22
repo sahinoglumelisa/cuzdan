@@ -57,9 +57,15 @@ export const CATEGORIES = [...DEFAULTS.map(([c]) => c), 'Diğer'];
 export function categorize(description: string, amount: number, userRules: Rule[]): string {
   // Başa/sona boşluk: ' bim ' gibi kalıplar satır başı/sonunda da eşleşsin.
   const text = ` ${normalize(description).replace(/[*/\\,;:]/g, ' ')} `;
-  // Bazı bankalar açıklamayı boşluksuz yazar ("KREDİKARTIYILLIKÜCRETİ"); çok kelimeli kalıplar bu haliyle de aransın.
+  // Bazı bankalar açıklamayı boşluksuz yazar ("KREDİKARTIYILLIKÜCRETİ"), bazı PDF'lerden de metin harf harf
+  // aralıklı çıkar ("M I G R O S"). Bu yüzden kalıplar boşluksuz halde de aranır. Kelime sınırı isteyen
+  // (' bim ', ' marti ') ve kısa kalıplar boşluksuz metinde kelime ortasında yanlış eşleşeceği için hariç.
   const flat = text.replace(/\s/g, '');
-  const hit = (w: string) => text.includes(w) || (w === w.trim() && w.includes(' ') && flat.includes(w.replace(/\s/g, '')));
+  const hit = (w: string) => {
+    if (text.includes(w)) return true;
+    const bare = w.replace(/\s/g, '');
+    return w === w.trim() && bare.length >= 5 && flat.includes(bare);
+  };
   const key = merchantKey(description);
   // Önce kullanıcının kendi düzeltmeleri
   const own = userRules.find((r) => r.match === key);

@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import { categorize } from './categories';
 import type { ImportRecord, Rule, Settings, Transaction } from './types';
 
 class CuzdanDB extends Dexie {
@@ -41,3 +42,20 @@ export function convert(amount: number, from: string, s: Settings): number | nul
 
 // iOS'un depolamayı kendiliğinden silmemesi için kalıcı depolama iste.
 navigator.storage?.persist?.().catch(() => {});
+
+/**
+ * "Diğer"de kalmış işlemleri güncel kurallarla yeniden dener (kategori listesi geliştikçe eskiler de düzelsin).
+ * Kullanıcı bir işyerini bilerek "Diğer" yaptıysa kuralı önce bakıldığı için yine "Diğer" kalır.
+ */
+export async function recategorizeOthers() {
+  await db.transaction('rw', db.transactions, db.rules, async () => {
+    const rules = await db.rules.toArray();
+    await db.transactions.where('category').equals('Diğer').modify((t) => {
+      let c = categorize(t.description, t.amount, rules);
+      if (t.kind === 'kart' && c === 'Gelir') c = 'Kart Ödemesi';
+      t.category = c;
+    });
+  });
+}
+
+recategorizeOthers().catch(console.error);

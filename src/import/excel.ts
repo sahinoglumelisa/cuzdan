@@ -4,20 +4,21 @@ import type { ParsedRow } from '../types';
 import { parseAmount, parseDate } from './parse';
 
 const DATE_COLS = ['islem tarihi', 'tarih', 'date'];
-const DESC_COLS = ['aciklama', 'islem aciklamasi', 'islem', 'isyeri', 'description'];
+// Not: tek başına 'islem' yazılmamalı; "içerir" aramasında "İşlem Tarihi" sütununu yakalayıp açıklama yerine tarihi okuyordu.
+const DESC_COLS = ['aciklama', 'islem aciklamasi', 'isyeri adi', 'isyeri', 'islem detayi', 'detay', 'description', 'islem'];
 const AMOUNT_COLS = ['islem tutari', 'tutar', 'tutar (tl)', 'amount'];
 const DEBIT_COLS = ['borc', 'cikan', 'gider'];
 const CREDIT_COLS = ['alacak', 'giren', 'gelir'];
 const TYPE_COLS = ['islem tipi', 'operation type'];
 
 /** Başlık satırındaki sütunu bulur: önce tam eşleşme, sonra "içerir". */
-function findCol(header: string[], names: string[]) {
+function findCol(header: string[], names: string[], taken: number[] = []) {
   for (const n of names) {
-    const i = header.indexOf(n);
+    const i = header.findIndex((h, j) => h === n && !taken.includes(j));
     if (i >= 0) return i;
   }
   for (const n of names) {
-    const i = header.findIndex((h) => h.includes(n));
+    const i = header.findIndex((h, j) => h.includes(n) && !taken.includes(j));
     if (i >= 0) return i;
   }
   return -1;
@@ -42,11 +43,12 @@ export async function parseSpreadsheet(file: File): Promise<ParsedRow[]> {
 
     const header = grid[headerIdx].map((c) => normalize(String(c)));
     const iDate = findCol(header, DATE_COLS);
-    const iDesc = findCol(header, DESC_COLS);
     const iAmount = findCol(header, AMOUNT_COLS);
     const iDebit = findCol(header, DEBIT_COLS);
     const iCredit = findCol(header, CREDIT_COLS);
     const iType = findCol(header, TYPE_COLS);
+    // Açıklama sütunu tarih/tutar/tip sütunlarından biri olamaz.
+    const iDesc = findCol(header, DESC_COLS, [iDate, iAmount, iDebit, iCredit, iType]);
     // Başlığın üstündeki bilgi satırlarında (ör. "Ürün-Döviz Tipi") geçen para birimi; yoksa TL
     const top = grid.slice(0, headerIdx).flat().join(' ');
     const currency = /\bEUR\b|Euro/i.test(top) ? 'EUR' : /\bUSD\b|Dolar/i.test(top) ? 'USD' : 'TRY';
